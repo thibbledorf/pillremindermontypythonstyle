@@ -1,0 +1,10 @@
+schedule
+pyttsx3
+SpeechRecognition
+sounddevice
+numpy
+requests
+feedparser
+flask
+keyboard
+anthropic

@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+
+# Runtime logs and generated content (personal data, not source)
+pill_reminder/pill_reminder.log
+pill_reminder/generated_phrases.json
+pill_reminder_ios/PillReminder/generated_phrases.json
+
+# macOS / Xcode
+.DS_Store
+*.xcuserstate
+xcuserdata/
+DerivedData/
+
+# Secrets — never commit API keys
+.env
+*.pem

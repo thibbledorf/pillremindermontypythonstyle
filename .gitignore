@@ -1,18 +1,108 @@
+# Xcode
+*.pbxproj
+*.xcworkspace/
+.derived/
+.build/
+*.xcarchive/
+DerivedData/
+*.ipa
+*.xcuserstate
+*.xcconfig
+*.xcuserdatad/
+
+# CocoaPods
+Pods/
+Podfile.lock
+
+# Carthage
+Carthage/Build/
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.pem
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._.DS_Store
+
+# IDE
+.vscode/
+.vscode/settings.json
+.idea/
+.idea/**/workspace.xml
+.idea/**/misc.xml
+*.swp
+*.swo
+*~
+
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
 
 # Runtime logs and generated content (personal data, not source)
+*.log
 pill_reminder/pill_reminder.log
 pill_reminder/generated_phrases.json
 pill_reminder_ios/PillReminder/generated_phrases.json
+logs/
 
-# macOS / Xcode
-.DS_Store
-*.xcuserstate
-xcuserdata/
-DerivedData/
+# Windows
+Thumbs.db
+*.exe
+*.dll
 
-# Secrets — never commit API keys
-.env
-*.pem
+# Build artifacts
+*.o
+*.a
+*.so
+
+# API Keys and Secrets
+secrets.txt
+config/secrets/
+keychain_backup
+
+# Node (for backend)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Test coverage
+coverage/
+.coverage
+htmlcov/

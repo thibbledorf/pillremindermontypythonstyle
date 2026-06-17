@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Used to listen for your spoken 'yes' when acknowledging a pill reminder.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Used to recognize your spoken acknowledgment of pill reminders.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Used to fetch the local weather report after you acknowledge a reminder.</string>
+	<key>UIUserInterfaceStyle</key>
+	<string>Automatic</string>
+</dict>
+</plist>

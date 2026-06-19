@@ -3,9 +3,9 @@ title Pill Reminder - Monty Python Edition
 echo.
 echo ============================================================
 echo  Pill Reminder - Monty Python Edition
-echo  Reminders: 07:00  13:00  17:00  21:00
+echo  Reminders loaded from config.json
 echo  Agent API: http://localhost:5000
-echo  Press Ctrl+C to stop
+echo  Tray icon in system tray — right-click for Settings
 echo ============================================================
 echo.
 
@@ -13,10 +13,10 @@ echo.
 net session >nul 2>&1
 if errorlevel 1 (
     echo Requesting admin rights for global keyboard listener...
-    powershell -Command "Start-Process cmd -ArgumentList '/c cd /d ""%~dp0"" && python pill_reminder.py' -Verb RunAs"
+    powershell -Command "Start-Process cmd -ArgumentList '/c cd /d ""%~dp0"" && python launcher.py' -Verb RunAs -WindowStyle Hidden"
     exit /b
 )
 
 cd /d "%~dp0"
-python pill_reminder.py
-pause
+pip install -r requirements.txt --quiet
+python launcher.py

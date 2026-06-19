@@ -57,13 +57,38 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
-PILL_TIMES        = ["07:00", "13:00", "17:00", "21:00"]
 FOX_NEWS_RSS      = "https://moxie.foxnews.com/google-publisher/latest.xml"
 FOX_NEWS_RSS_ALT  = "http://feeds.foxnews.com/foxnews/latest"
 NEWS_COUNT        = 5
 AGENT_PORT        = 5000
 REMINDER_INTERVAL = 60   # seconds between repeat reminders if unacknowledged
 LISTEN_SECONDS    = 8    # how long to listen for voice each attempt
+
+_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
+_DEFAULTS = {
+    "pill_times":    ["07:00", "13:00", "17:00", "21:00"],
+    "malady":        "Parkinson's",
+    "voice_gender":  "male",
+    "voice_accent":  "british",
+}
+
+def load_config() -> dict:
+    try:
+        with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {**_DEFAULTS, **data}
+    except Exception:
+        return dict(_DEFAULTS)
+
+_config = load_config()
+
+def get_pill_times() -> list:
+    return _config.get("pill_times", _DEFAULTS["pill_times"])
+
+def get_malady() -> str:
+    return _config.get("malady", _DEFAULTS["malady"]) or "Parkinson's"
+
+PILL_TIMES = get_pill_times()  # initial value; scheduler uses this at startup
 
 # ─── Monty Python content ─────────────────────────────────────────────────────
 REMINDER_PHRASES = [
@@ -324,6 +349,7 @@ def generate_ai_phrase() -> str | None:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
+    malady = get_malady()
     try:
         client = _anthropic_sdk.Anthropic(api_key=api_key)
         response = client.messages.create(
@@ -334,7 +360,7 @@ def generate_ai_phrase() -> str | None:
                 "content": (
                     "Write ONE short, funny Monty Python-style pill reminder (2-4 sentences). "
                     "Reference a specific Monty Python character, quote, or scene in a fresh, creative way. "
-                    "The recipient has Parkinson's disease and must take medication on time. "
+                    f"The recipient has {malady} and must take medication on time. "
                     "Be encouraging, silly, and affectionate — never mean. "
                     "Reply with only the reminder text. No quotes, no labels, no explanation."
                 ),
@@ -355,12 +381,15 @@ def generate_ai_phrase() -> str | None:
 def _pick_reminder_phrase() -> str:
     """Pick from the combined static + AI-generated phrase pool.
 
-    Also kicks off background AI generation 1-in-5 calls so the pool grows
-    over time without blocking the reminder.
+    Substitutes the configured malady into static phrases and kicks off
+    background AI generation 1-in-5 calls so the pool grows over time.
     """
     generated = _load_generated_phrases()
     pool = REMINDER_PHRASES + generated
     phrase = random.choice(pool)
+    malady = get_malady()
+    if malady.lower() != "parkinson's":
+        phrase = phrase.replace("Parkinson's", malady).replace("Parkinson's disease", malady)
     if _ANTHROPIC_OK and os.environ.get("ANTHROPIC_API_KEY") and random.random() < 0.20:
         threading.Thread(target=generate_ai_phrase, daemon=True).start()
     return phrase
@@ -374,17 +403,29 @@ _recognizer      = None
 # ─── Text-to-speech ───────────────────────────────────────────────────────────
 def _configure_voice(engine):
     voices = engine.getProperty("voices")
-    # Prefer a male English voice for gravitas
-    preferred = ["david", "mark", "george", "english"]
+    gender = _config.get("voice_gender", "male").lower()
+    accent = _config.get("voice_accent", "british").lower()
+
+    # Priority order per gender+accent combination (SAPI5 voice name substrings)
+    _VOICE_PREFS = {
+        ("male",   "british"):  ["george", "daniel"],
+        ("male",   "american"): ["david", "mark"],
+        ("female", "british"):  ["hazel", "susan"],
+        ("female", "american"): ["zira", "eva", "cortana"],
+    }
+    preferred = _VOICE_PREFS.get((gender, accent), ["david", "george", "zira", "hazel"])
+
     for pref in preferred:
         for v in voices:
             if pref in v.name.lower():
                 engine.setProperty("voice", v.id)
+                log.info("Voice selected: %s", v.name)
                 break
         else:
             continue
         break
-    engine.setProperty("rate", 155)    # slightly slower = clearer
+
+    engine.setProperty("rate", 155)
     engine.setProperty("volume", 1.0)
 
 

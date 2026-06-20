@@ -454,8 +454,9 @@ def _configure_voice(engine):
         engine.setProperty("volume", 1.0)
         return
 
-    gender = _config.get("voice_gender", "male").lower()
-    accent = _config.get("voice_accent", "british").lower()
+    live = load_config()   # always read fresh so settings UI changes take effect immediately
+    gender = live.get("voice_gender", "male").lower()
+    accent = live.get("voice_accent", "british").lower()
 
     # Preferred names per combo, falling through to the other accent as backup
     _PREFS = {

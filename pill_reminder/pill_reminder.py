@@ -22,6 +22,9 @@ import os
 import io
 import wave
 import json
+import socket
+import winsound
+import ctypes
 
 try:
     import anthropic as _anthropic_sdk
@@ -29,6 +32,12 @@ try:
 except ImportError:
     _ANTHROPIC_SDK = None
     _ANTHROPIC_OK = False
+
+try:
+    from winotify import Notification as _WiNotif, audio as _wnotif_audio
+    _TOAST_OK = True
+except ImportError:
+    _TOAST_OK = False
 
 try:
     import sounddevice as sd
@@ -56,14 +65,75 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# ─── Single-instance lock ─────────────────────────────────────────────────────
+_INSTANCE_PORT  = 19847          # arbitrary UDP port used as a process mutex
+_instance_sock  = None           # held open for process lifetime
+
+def _acquire_instance_lock():
+    """Bind a UDP socket as a lightweight single-instance mutex.
+    Exits cleanly if another pill_reminder.py is already running.
+    """
+    global _instance_sock
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.bind(("127.0.0.1", _INSTANCE_PORT))
+        _instance_sock = sock          # keep reference so it isn't GC'd
+    except OSError:
+        log.error("Another instance of pill_reminder.py is already running. Exiting.")
+        sys.exit(0)
+
+# ─── Screen-lock detection ────────────────────────────────────────────────────
+def _is_screen_locked() -> bool:
+    """True when the Windows workstation is locked (GetForegroundWindow == 0)."""
+    try:
+        return ctypes.windll.user32.GetForegroundWindow() == 0
+    except Exception:
+        return False
+
+# ─── Toast notifications (appear on the Windows lock screen) ─────────────────
+def _send_toast(title: str, body: str):
+    if not _TOAST_OK:
+        return
+    try:
+        toast = _WiNotif(app_id="Pill Reminder", title=title, msg=body[:200], duration="long")
+        toast.set_audio(_wnotif_audio.Reminder, loop=False)
+        toast.show()
+    except Exception as exc:
+        log.debug("Toast notification failed: %s", exc)
+
 # ─── Config ───────────────────────────────────────────────────────────────────
-PILL_TIMES        = ["07:00", "13:00", "17:00", "21:00"]
 FOX_NEWS_RSS      = "https://moxie.foxnews.com/google-publisher/latest.xml"
 FOX_NEWS_RSS_ALT  = "http://feeds.foxnews.com/foxnews/latest"
 NEWS_COUNT        = 5
 AGENT_PORT        = 5000
 REMINDER_INTERVAL = 60   # seconds between repeat reminders if unacknowledged
 LISTEN_SECONDS    = 8    # how long to listen for voice each attempt
+
+_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
+_DEFAULTS = {
+    "pill_times":    ["07:00", "13:00", "17:00", "21:00"],
+    "malady":        "Parkinson's",
+    "voice_gender":  "male",
+    "voice_accent":  "british",
+}
+
+def load_config() -> dict:
+    try:
+        with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {**_DEFAULTS, **data}
+    except Exception:
+        return dict(_DEFAULTS)
+
+_config = load_config()
+
+def get_pill_times() -> list:
+    return _config.get("pill_times", _DEFAULTS["pill_times"])
+
+def get_malady() -> str:
+    return _config.get("malady", _DEFAULTS["malady"]) or "Parkinson's"
+
+PILL_TIMES = get_pill_times()  # initial value; scheduler uses this at startup
 
 # ─── Monty Python content ─────────────────────────────────────────────────────
 REMINDER_PHRASES = [
@@ -324,6 +394,7 @@ def generate_ai_phrase() -> str | None:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
+    malady = get_malady()
     try:
         client = _anthropic_sdk.Anthropic(api_key=api_key)
         response = client.messages.create(
@@ -334,7 +405,7 @@ def generate_ai_phrase() -> str | None:
                 "content": (
                     "Write ONE short, funny Monty Python-style pill reminder (2-4 sentences). "
                     "Reference a specific Monty Python character, quote, or scene in a fresh, creative way. "
-                    "The recipient has Parkinson's disease and must take medication on time. "
+                    f"The recipient has {malady} and must take medication on time. "
                     "Be encouraging, silly, and affectionate — never mean. "
                     "Reply with only the reminder text. No quotes, no labels, no explanation."
                 ),
@@ -355,12 +426,15 @@ def generate_ai_phrase() -> str | None:
 def _pick_reminder_phrase() -> str:
     """Pick from the combined static + AI-generated phrase pool.
 
-    Also kicks off background AI generation 1-in-5 calls so the pool grows
-    over time without blocking the reminder.
+    Substitutes the configured malady into static phrases and kicks off
+    background AI generation 1-in-5 calls so the pool grows over time.
     """
     generated = _load_generated_phrases()
     pool = REMINDER_PHRASES + generated
     phrase = random.choice(pool)
+    malady = get_malady()
+    if malady.lower() != "parkinson's":
+        phrase = phrase.replace("Parkinson's", malady).replace("Parkinson's disease", malady)
     if _ANTHROPIC_OK and os.environ.get("ANTHROPIC_API_KEY") and random.random() < 0.20:
         threading.Thread(target=generate_ai_phrase, daemon=True).start()
     return phrase
@@ -374,17 +448,41 @@ _recognizer      = None
 # ─── Text-to-speech ───────────────────────────────────────────────────────────
 def _configure_voice(engine):
     voices = engine.getProperty("voices")
-    # Prefer a male English voice for gravitas
-    preferred = ["david", "mark", "george", "english"]
-    for pref in preferred:
+    if not voices:
+        log.warning("No TTS voices found.")
+        engine.setProperty("rate", 155)
+        engine.setProperty("volume", 1.0)
+        return
+
+    gender = _config.get("voice_gender", "male").lower()
+    accent = _config.get("voice_accent", "british").lower()
+
+    # Preferred names per combo, falling through to the other accent as backup
+    _PREFS = {
+        ("male",   "british"):  ["george", "daniel", "david", "mark"],
+        ("male",   "american"): ["david", "mark", "george", "daniel"],
+        ("female", "british"):  ["hazel", "susan", "zira", "eva"],
+        ("female", "american"): ["zira", "eva", "cortana", "hazel", "susan"],
+    }
+    order = _PREFS.get((gender, accent), ["david", "george", "zira", "hazel"])
+
+    log.info("Available TTS voices: %s", [v.name for v in voices])
+    selected = None
+    for pref in order:
         for v in voices:
             if pref in v.name.lower():
-                engine.setProperty("voice", v.id)
+                selected = v
                 break
-        else:
-            continue
-        break
-    engine.setProperty("rate", 155)    # slightly slower = clearer
+        if selected:
+            break
+
+    if selected is None:
+        selected = voices[0]
+        log.warning("No preferred voice found — using first available: %s", selected.name)
+
+    engine.setProperty("voice", selected.id)
+    log.info("Voice selected: %s", selected.name)
+    engine.setProperty("rate", 155)
     engine.setProperty("volume", 1.0)
 
 
@@ -568,9 +666,19 @@ def _reminder_cycle():
                 break
 
         phrase = _pick_reminder_phrase()
-        speak(phrase)
-        time.sleep(0.3)
-        speak("Press any key, or say YES, to confirm you have taken your pills!")
+
+        # Toast fires regardless of lock state — appears on the Windows lock screen
+        _send_toast("Pill O'Clock! 💊", phrase)
+        # Audible beep works even when screen is locked (bypasses SAPI5 COM restrictions)
+        winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        time.sleep(0.5)
+
+        if not _is_screen_locked():
+            speak(phrase)
+            time.sleep(0.3)
+            speak("Press any key, or say YES, to confirm you have taken your pills!")
+        else:
+            log.info("Screen locked — toast and beep sent; waiting for unlock or acknowledgment.")
 
         # Wait up to REMINDER_INTERVAL seconds for acknowledgment
         acknowledged  = False
@@ -661,6 +769,7 @@ def _run_flask():
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
+    _acquire_instance_lock()   # exits immediately if another instance is running
     _init_tts()
 
     # Schedule reminders

@@ -8,3 +8,7 @@ feedparser
 flask
 keyboard
 anthropic
+customtkinter
+pystray
+Pillow
+winotify

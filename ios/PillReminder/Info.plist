@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.thibbledorf.pillreminder</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Used to listen for your spoken 'yes' when acknowledging a pill reminder.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

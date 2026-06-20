@@ -11,3 +11,4 @@ anthropic
 customtkinter
 pystray
 Pillow
+winotify

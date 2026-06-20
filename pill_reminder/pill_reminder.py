@@ -22,6 +22,9 @@ import os
 import io
 import wave
 import json
+import socket
+import winsound
+import ctypes
 
 try:
     import anthropic as _anthropic_sdk
@@ -29,6 +32,12 @@ try:
 except ImportError:
     _ANTHROPIC_SDK = None
     _ANTHROPIC_OK = False
+
+try:
+    from winotify import Notification as _WiNotif, audio as _wnotif_audio
+    _TOAST_OK = True
+except ImportError:
+    _TOAST_OK = False
 
 try:
     import sounddevice as sd
@@ -55,6 +64,42 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+# ─── Single-instance lock ─────────────────────────────────────────────────────
+_INSTANCE_PORT  = 19847          # arbitrary UDP port used as a process mutex
+_instance_sock  = None           # held open for process lifetime
+
+def _acquire_instance_lock():
+    """Bind a UDP socket as a lightweight single-instance mutex.
+    Exits cleanly if another pill_reminder.py is already running.
+    """
+    global _instance_sock
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.bind(("127.0.0.1", _INSTANCE_PORT))
+        _instance_sock = sock          # keep reference so it isn't GC'd
+    except OSError:
+        log.error("Another instance of pill_reminder.py is already running. Exiting.")
+        sys.exit(0)
+
+# ─── Screen-lock detection ────────────────────────────────────────────────────
+def _is_screen_locked() -> bool:
+    """True when the Windows workstation is locked (GetForegroundWindow == 0)."""
+    try:
+        return ctypes.windll.user32.GetForegroundWindow() == 0
+    except Exception:
+        return False
+
+# ─── Toast notifications (appear on the Windows lock screen) ─────────────────
+def _send_toast(title: str, body: str):
+    if not _TOAST_OK:
+        return
+    try:
+        toast = _WiNotif(app_id="Pill Reminder", title=title, msg=body[:200], duration="long")
+        toast.set_audio(_wnotif_audio.Reminder, loop=False)
+        toast.show()
+    except Exception as exc:
+        log.debug("Toast notification failed: %s", exc)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 FOX_NEWS_RSS      = "https://moxie.foxnews.com/google-publisher/latest.xml"
@@ -403,28 +448,40 @@ _recognizer      = None
 # ─── Text-to-speech ───────────────────────────────────────────────────────────
 def _configure_voice(engine):
     voices = engine.getProperty("voices")
+    if not voices:
+        log.warning("No TTS voices found.")
+        engine.setProperty("rate", 155)
+        engine.setProperty("volume", 1.0)
+        return
+
     gender = _config.get("voice_gender", "male").lower()
     accent = _config.get("voice_accent", "british").lower()
 
-    # Priority order per gender+accent combination (SAPI5 voice name substrings)
-    _VOICE_PREFS = {
-        ("male",   "british"):  ["george", "daniel"],
-        ("male",   "american"): ["david", "mark"],
-        ("female", "british"):  ["hazel", "susan"],
-        ("female", "american"): ["zira", "eva", "cortana"],
+    # Preferred names per combo, falling through to the other accent as backup
+    _PREFS = {
+        ("male",   "british"):  ["george", "daniel", "david", "mark"],
+        ("male",   "american"): ["david", "mark", "george", "daniel"],
+        ("female", "british"):  ["hazel", "susan", "zira", "eva"],
+        ("female", "american"): ["zira", "eva", "cortana", "hazel", "susan"],
     }
-    preferred = _VOICE_PREFS.get((gender, accent), ["david", "george", "zira", "hazel"])
+    order = _PREFS.get((gender, accent), ["david", "george", "zira", "hazel"])
 
-    for pref in preferred:
+    log.info("Available TTS voices: %s", [v.name for v in voices])
+    selected = None
+    for pref in order:
         for v in voices:
             if pref in v.name.lower():
-                engine.setProperty("voice", v.id)
-                log.info("Voice selected: %s", v.name)
+                selected = v
                 break
-        else:
-            continue
-        break
+        if selected:
+            break
 
+    if selected is None:
+        selected = voices[0]
+        log.warning("No preferred voice found — using first available: %s", selected.name)
+
+    engine.setProperty("voice", selected.id)
+    log.info("Voice selected: %s", selected.name)
     engine.setProperty("rate", 155)
     engine.setProperty("volume", 1.0)
 
@@ -609,9 +666,19 @@ def _reminder_cycle():
                 break
 
         phrase = _pick_reminder_phrase()
-        speak(phrase)
-        time.sleep(0.3)
-        speak("Press any key, or say YES, to confirm you have taken your pills!")
+
+        # Toast fires regardless of lock state — appears on the Windows lock screen
+        _send_toast("Pill O'Clock! 💊", phrase)
+        # Audible beep works even when screen is locked (bypasses SAPI5 COM restrictions)
+        winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        time.sleep(0.5)
+
+        if not _is_screen_locked():
+            speak(phrase)
+            time.sleep(0.3)
+            speak("Press any key, or say YES, to confirm you have taken your pills!")
+        else:
+            log.info("Screen locked — toast and beep sent; waiting for unlock or acknowledgment.")
 
         # Wait up to REMINDER_INTERVAL seconds for acknowledgment
         acknowledged  = False
@@ -702,6 +769,7 @@ def _run_flask():
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
+    _acquire_instance_lock()   # exits immediately if another instance is running
     _init_tts()
 
     # Schedule reminders

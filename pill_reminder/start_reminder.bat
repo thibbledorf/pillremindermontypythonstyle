@@ -19,4 +19,5 @@ if errorlevel 1 (
 
 cd /d "%~dp0"
 pip install -r requirements.txt --quiet
-python launcher.py
+:: pythonw = no console window; tray icon is the only UI
+pythonw launcher.py

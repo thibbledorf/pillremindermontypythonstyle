@@ -802,9 +802,30 @@ def main():
     )
 
     log.info("Pill reminder running. Press Ctrl+C to stop.")
+
+    last_check = datetime.now()
+
     try:
         while True:
             schedule.run_pending()
+
+            # Sleep-mode recovery: if >120 seconds passed since last check,
+            # system may have woken from sleep. Fire any missed reminders.
+            now = datetime.now()
+            delta_sec = (now - last_check).total_seconds()
+
+            if delta_sec > 120:
+                log.info("Gap of %.0f sec detected — checking for missed reminders", delta_sec)
+                for t_str in PILL_TIMES:
+                    h, m = map(int, t_str.split(":"))
+                    scheduled = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                    # Fire if the scheduled time has passed since last check
+                    if last_check < scheduled <= now:
+                        log.info("Firing missed reminder at %s", t_str)
+                        threading.Thread(target=_reminder_cycle, daemon=True).start()
+                        break   # Fire once per check cycle, not all at once
+
+            last_check = now
             time.sleep(5)
     except KeyboardInterrupt:
         speak("Farewell, brave knight! Run away! Run away!")

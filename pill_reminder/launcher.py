@@ -109,36 +109,46 @@ def _start_proc():
 
 def _watchdog():
     """Runs in background — starts the reminder and restarts it on crash or
-    config change."""
+    config change. Never exits; catches all exceptions and logs them."""
     config_mtime = _config_mtime()
 
     while not _stop_event.is_set():
-        _start_proc()
-        _restart_event.clear()
+        try:
+            _start_proc()
+            _restart_event.clear()
 
-        while not _stop_event.is_set() and not _restart_event.is_set():
-            # Check if process died
-            with _proc_lock:
-                dead = _proc is None or _proc.poll() is not None
-            if dead:
-                print("[launcher] pill_reminder.py exited — restarting in 3 s…")
-                time.sleep(3)
-                break
+            while not _stop_event.is_set() and not _restart_event.is_set():
+                try:
+                    # Check if process died
+                    with _proc_lock:
+                        dead = _proc is None or _proc.poll() is not None
+                    if dead:
+                        print("[launcher] pill_reminder.py exited — restarting in 3 s…")
+                        time.sleep(3)
+                        break
 
-            # Check if config changed
-            new_mtime = _config_mtime()
-            if new_mtime != config_mtime:
-                config_mtime = new_mtime
-                print("[launcher] Config changed — restarting pill_reminder.py…")
-                _restart_event.set()
-                break
+                    # Check if config changed
+                    new_mtime = _config_mtime()
+                    if new_mtime != config_mtime:
+                        config_mtime = new_mtime
+                        print("[launcher] Config changed — restarting pill_reminder.py…")
+                        _restart_event.set()
+                        break
 
-            time.sleep(2)
+                    time.sleep(2)
+                except Exception as exc:
+                    print(f"[launcher] Inner loop exception: {exc}", flush=True)
+                    time.sleep(5)
+                    break
 
-        if not _stop_event.is_set():
+            if not _stop_event.is_set():
+                _kill_proc()
+                if _restart_event.is_set():
+                    time.sleep(1)
+        except Exception as exc:
+            print(f"[launcher] Watchdog exception: {exc}", flush=True)
             _kill_proc()
-            if _restart_event.is_set():
-                time.sleep(1)   # brief pause so the port clears
+            time.sleep(5)
 
 
 def _config_mtime() -> float:
@@ -151,22 +161,33 @@ def _config_mtime() -> float:
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
 def main():
-    # Start watchdog thread
-    t = threading.Thread(target=_watchdog, daemon=True)
-    t.start()
+    try:
+        # Start watchdog thread
+        t = threading.Thread(target=_watchdog, daemon=True)
+        t.start()
 
-    # System tray (blocks until Exit is chosen)
-    icon = pystray.Icon(
-        "pill_reminder",
-        _make_icon(),
-        "Pill Reminder",
-        _build_menu(),
-    )
-    icon.run()
+        # System tray (blocks until Exit is chosen)
+        try:
+            icon = pystray.Icon(
+                "pill_reminder",
+                _make_icon(),
+                "Pill Reminder",
+                _build_menu(),
+            )
+            icon.run()
+        except Exception as exc:
+            print(f"[launcher] Tray icon error: {exc}", flush=True)
+            # Continue anyway — tray failed but watchdog keeps running
+            time.sleep(10)
 
-    # Cleanup after tray exits
-    _stop_event.set()
-    _kill_proc()
+        # Cleanup after tray exits
+        _stop_event.set()
+        _kill_proc()
+    except Exception as exc:
+        print(f"[launcher] Fatal error in main: {exc}", flush=True)
+        _stop_event.set()
+        _kill_proc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import customtkinter as ctk
+import tkinter.messagebox as msgbox
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 DEFAULTS = {
@@ -23,9 +24,15 @@ def load_config() -> dict:
         return dict(DEFAULTS)
 
 
-def save_config(cfg: dict):
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2)
+def save_config(cfg: dict) -> bool:
+    """Returns True if save succeeded, False otherwise."""
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+        return True
+    except Exception as exc:
+        print(f"Error saving config: {exc}", flush=True)
+        return False
 
 
 class SettingsApp(ctk.CTk):
@@ -145,9 +152,15 @@ class SettingsApp(ctk.CTk):
             "voice_gender": self._gender_var.get(),
             "voice_accent": self._accent_var.get(),
         }
-        save_config(cfg)
-        self.destroy()
-        sys.exit(0)   # exit code 0 = saved; launcher restarts the reminder
+        if not cfg["pill_times"]:
+            msgbox.showerror("Error", "At least one reminder time is required.")
+            return
+        if save_config(cfg):
+            msgbox.showinfo("Saved", "Settings saved. The reminder will restart with your new settings.")
+            self.destroy()
+            sys.exit(0)   # exit code 0 = saved; launcher restarts the reminder
+        else:
+            msgbox.showerror("Error", f"Failed to save settings to {CONFIG_FILE}. Check file permissions.")
 
     def _cancel(self):
         self.destroy()

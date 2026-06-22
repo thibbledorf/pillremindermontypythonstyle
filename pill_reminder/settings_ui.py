@@ -39,7 +39,7 @@ class SettingsApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Pill Reminder — Settings")
-        self.geometry("480x560")
+        self.geometry("520x680")
         self.resizable(False, False)
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
@@ -100,11 +100,14 @@ class SettingsApp(ctk.CTk):
         for val, label in [("british", "British"), ("american", "American")]:
             ctk.CTkRadioButton(accent_frame, text=label, variable=self._accent_var, value=val).pack(side="left", padx=12)
 
+        # Spacer to push buttons down
+        ctk.CTkLabel(self, text="").pack(fill="both", expand=True)
+
         # ── Buttons ─────────────────────────────────────────────────────────
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=20)
-        ctk.CTkButton(btn_frame, text="Cancel", fg_color="gray40", command=self._cancel).pack(side="left", expand=True, padx=4)
-        ctk.CTkButton(btn_frame, text="Save & Apply", command=self._save).pack(side="right", expand=True, padx=4)
+        btn_frame.pack(fill="x", padx=20, pady=24)
+        ctk.CTkButton(btn_frame, text="Cancel", fg_color="gray40", height=40, command=self._cancel).pack(side="left", expand=True, padx=6, fill="both")
+        ctk.CTkButton(btn_frame, text="Save & Apply", height=40, command=self._save).pack(side="right", expand=True, padx=6, fill="both")
 
     def _on_count_change(self, val):
         n = int(round(float(val)))

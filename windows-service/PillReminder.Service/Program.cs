@@ -43,9 +43,17 @@ voice.Speak(
 Log.Info($"Pill times: {string.Join(", ", cfg.PillTimes)}");
 
 // ── Run until cancelled ───────────────────────────────────────────────────────
-await Task.WhenAll(
-    reminder.RunAsync(cts.Token),
-    api.RunAsync(cts.Token)
-);
+try
+{
+    await Task.WhenAll(
+        reminder.RunAsync(cts.Token),
+        api.RunAsync(cts.Token)
+    );
+}
+catch (Exception ex)
+{
+    Log.Error($"Fatal error: {ex}");
+    throw;  // Re-throw so Windows Task Scheduler sees the crash and restarts
+}
 
 Log.Info("Pill Reminder stopped.");

@@ -49,10 +49,14 @@ try
         reminder.RunAsync(cts.Token),
         api.RunAsync(cts.Token)
     );
+
+    // Clear crash counter on successful shutdown
+    CrashDetector.ClearCrashes();
 }
 catch (Exception ex)
 {
     Log.Error($"Fatal error: {ex}");
+    CrashDetector.RecordCrash();  // Track this crash; alert if repeated
     throw;  // Re-throw so Windows Task Scheduler sees the crash and restarts
 }
 

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.thibbledorf.pillreminder.healthcheck</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>/Applications/Pill Reminder.app/Contents/Resources/healthcheck.sh</string>
+    </array>
+    <!-- Every 5 minutes. launchd also runs it once at load; the script tolerates startup. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/PillReminder/healthcheck.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/PillReminder/healthcheck.log</string>
+</dict>
+</plist>

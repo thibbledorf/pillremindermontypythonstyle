@@ -1,0 +1,11 @@
+#!/bin/zsh
+# Stop any running copy before the app bundle is replaced.
+USER_NAME=$(/usr/bin/stat -f%Su /dev/console)
+[[ -z "$USER_NAME" || "$USER_NAME" == "root" ]] && exit 0
+USER_ID=$(/usr/bin/id -u "$USER_NAME")
+
+for label in com.thibbledorf.pillreminder.healthcheck com.thibbledorf.pillreminder; do
+    /bin/launchctl bootout "gui/$USER_ID/$label" 2>/dev/null
+done
+/usr/bin/pkill -x PillReminder 2>/dev/null
+exit 0

@@ -1,0 +1,28 @@
+#!/bin/zsh
+# Install the per-user LaunchAgents for whoever is logged in at the console and start them.
+APP="/Applications/Pill Reminder.app"
+USER_NAME=$(/usr/bin/stat -f%Su /dev/console)
+if [[ -z "$USER_NAME" || "$USER_NAME" == "root" ]]; then
+    echo "No console user; LaunchAgents not installed. Log in and re-run the installer."
+    exit 0
+fi
+USER_ID=$(/usr/bin/id -u "$USER_NAME")
+USER_HOME=$(/usr/bin/dscl . -read "/Users/$USER_NAME" NFSHomeDirectory | /usr/bin/awk '{print $2}')
+AGENTS="$USER_HOME/Library/LaunchAgents"
+LOGS="$USER_HOME/Library/Logs/PillReminder"
+
+/usr/bin/sudo -u "$USER_NAME" /bin/mkdir -p "$AGENTS" "$LOGS"
+
+for label in com.thibbledorf.pillreminder com.thibbledorf.pillreminder.healthcheck; do
+    src="$APP/Contents/Resources/$label.plist"
+    dst="$AGENTS/$label.plist"
+    /usr/bin/sed "s|__HOME__|$USER_HOME|g" "$src" > "$dst"
+    /usr/sbin/chown "${USER_NAME}:staff" "$dst"
+    /bin/chmod 644 "$dst"
+    /bin/launchctl bootout "gui/$USER_ID/$label" 2>/dev/null
+    /bin/launchctl bootstrap "gui/$USER_ID" "$dst"
+done
+
+/bin/launchctl enable "gui/$USER_ID/com.thibbledorf.pillreminder"
+/bin/launchctl enable "gui/$USER_ID/com.thibbledorf.pillreminder.healthcheck"
+exit 0

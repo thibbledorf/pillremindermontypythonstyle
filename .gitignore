@@ -1,5 +1,4 @@
 # Xcode
-*.pbxproj
 *.xcworkspace/
 .derived/
 .build/

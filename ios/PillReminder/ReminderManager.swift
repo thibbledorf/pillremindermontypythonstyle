@@ -139,6 +139,10 @@ final class ReminderManager: ObservableObject {
         lastStatusMessage = "Done. See you at the next pill time!"
     }
 
+    func testVoice() async {
+        await speech.speak("I am Arthur, King of the Britons, and this is how I sound.")
+    }
+
     func saveAPIKey(_ key: String) {
         KeychainHelper.save(key)
         hasAPIKey = !key.isEmpty

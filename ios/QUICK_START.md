@@ -2,9 +2,9 @@
 
 ## Prerequisites
 - Mac with macOS 12 or later
-- Xcode 14 or later (install from App Store)
+- Xcode 16 or later (install from App Store)
 - Apple Developer Account (free to start)
-- iPhone or iPad with iOS 16+
+- iPhone or iPad with iOS 17+
 
 ## Opening the Project
 
@@ -29,9 +29,9 @@ The project will open in Xcode. You should see:
 5. Xcode auto-generates provisioning profiles
 
 ### 2. Verify Settings
-- **Bundle ID:** `com.example.pillreminder` (change if desired)
-- **Version:** 1.0
-- **Deployment Target:** iOS 16.0+
+- **Bundle ID:** `com.thibbledorf.pillreminder`
+- **Version:** 1.0.0
+- **Deployment Target:** iOS 17.0+
 - **Minimum Swift Version:** 5.0
 
 ## Building & Running

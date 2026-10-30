@@ -1,7 +1,7 @@
 # Pill Reminder — iOS (Monty Python Edition)
 
 Swift/SwiftUI port of the Windows pill reminder. Source files are in
-`PillReminder/` — you'll drop them into a fresh Xcode project.
+`PillReminder/`, and the Xcode project is `PillReminder.xcodeproj`.
 
 ## Platform constraint (read this first)
 
@@ -22,30 +22,16 @@ suspends apps and blocks always-on mic access for privacy. So the design is:
 
 ## Setup steps
 
-1. On your Mac, open Xcode → **File → New → Project → iOS → App**.
-   - Product Name: `PillReminder`
-   - Interface: **SwiftUI**
-   - Language: **Swift**
-   - Minimum deployment target: **iOS 16.0** or later
-2. Delete the auto-generated `ContentView.swift` and `PillReminderApp.swift`
-   that Xcode created, then drag in every `.swift` file from this folder's
-   `PillReminder/` directory (check "Copy items if needed").
-3. Open the target's **Info** tab (or `Info.plist`) and add these usage
-   strings — required or the app crashes when requesting permission:
-
-   | Key | Value |
-   |---|---|
-   | `NSMicrophoneUsageDescription` | "Used to listen for your spoken 'yes' when acknowledging a pill reminder." |
-   | `NSSpeechRecognitionUsageDescription` | "Used to recognize your spoken acknowledgment of pill reminders." |
-   | `NSLocationWhenInUseUsageDescription` | "Used to fetch the local weather report after you acknowledge a reminder." |
-
-4. Under the target's **Signing & Capabilities** tab, set your Apple
+1. Open `ios/PillReminder.xcodeproj` in Xcode 16 or later. The project targets
+   iOS 17.0, and usage strings are already in `PillReminder/Info.plist`. New
+   files added to `PillReminder/` are picked up automatically.
+2. Under the target's **Signing & Capabilities** tab, set your Apple
    Developer team (you mentioned you already have a dev account) so it can
    be installed on a real iPhone.
-5. Build and run on your iPhone (not just the simulator — the simulator
+3. Build and run on your iPhone (not just the simulator — the simulator
    can't reliably exercise mic/speech recognition or notifications the same
    way).
-6. In the app, go to the **Settings** tab and paste in your Anthropic API
+4. In the app, go to the **Settings** tab and paste in your Anthropic API
    key (`sk-ant-...`) from console.anthropic.com if you want the AI-generated
    phrase variety. This is optional — the app works fine with just the 40
    static Monty Python phrases if you skip it.

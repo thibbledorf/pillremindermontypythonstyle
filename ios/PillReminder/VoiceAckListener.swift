@@ -13,8 +13,16 @@ final class VoiceAckListener {
     private var audioEngine: AVAudioEngine?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+    private var finishListening: ((Bool) -> Void)?
+
+    /// Ends a listen in progress, as if the timeout had passed.
+    @MainActor
+    func cancel() {
+        finishListening?(false)
+    }
 
     /// Returns true if an acknowledgment word was heard before the timeout.
+    @MainActor
     func listen(timeout: TimeInterval) async -> Bool {
         let authStatus = await requestAuthorization()
         guard authStatus else { return false }
@@ -66,9 +74,16 @@ final class VoiceAckListener {
             self?.stop()
             completion(heard)
         }
+        finishListening = finish
 
         let inputNode = engine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
+        // With no usable input the format is empty, and installTap then raises
+        // an exception that Swift cannot catch.
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            finish(false)
+            return
+        }
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
             request.append(buffer)
         }
@@ -106,5 +121,6 @@ final class VoiceAckListener {
         audioEngine = nil
         recognitionRequest = nil
         recognitionTask = nil
+        finishListening = nil
     }
 }

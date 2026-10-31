@@ -17,6 +17,9 @@ final class ReminderManager: ObservableObject {
     @Published var lastStatusMessage = "Ready."
     @Published var hasAPIKey = KeychainHelper.load()?.isEmpty == false
 
+    private var isBriefing = false
+    private var ackRequested = false
+
     private let speech = SpeechSynthesizerService()
     private let listener = VoiceAckListener()
     private let newsWeather = NewsWeatherService()
@@ -102,25 +105,54 @@ final class ReminderManager: ObservableObject {
     /// Call this when the app opens via a notification tap, the "I Took My
     /// Pills" action, or a manual "Trigger now" button.
     func runReminderFlow(promptText: String? = nil) async {
+        guard !isReminderFlowActive else { return }
         isReminderFlowActive = true
-        defer { isReminderFlowActive = false }
+        defer {
+            isReminderFlowActive = false
+            ackRequested = false
+        }
 
         let phrase = promptText ?? PhraseCache.combinedPool().randomElement() ?? Phrases.reminders[0]
         lastStatusMessage = "Speaking reminder..."
         await speech.speak(phrase)
-        await speech.speak("Say YES, or tap Acknowledge, to confirm you have taken your pills.")
+        if !ackRequested {
+            await speech.speak("Say YES, or tap Acknowledge, to confirm you have taken your pills.")
+        }
 
-        lastStatusMessage = "Listening for acknowledgment..."
-        let heard = await listener.listen(timeout: 20)
+        var heard = false
+        if !ackRequested {
+            lastStatusMessage = "Listening for acknowledgment..."
+            heard = await listener.listen(timeout: 20)
+        }
 
-        if heard {
-            await acknowledge()
+        if heard || ackRequested {
+            await runBriefing()
         } else {
             lastStatusMessage = "No acknowledgment heard. Tap Acknowledge when ready."
         }
     }
 
+    /// Only one speech sequence runs at a time. An acknowledgment that arrives
+    /// during a reminder is never dropped: it ends the prompt and the running
+    /// flow moves straight to the briefing.
     func acknowledge() async {
+        guard !isBriefing else { return }
+        if isReminderFlowActive {
+            ackRequested = true
+            speech.stop()
+            listener.cancel()
+            return
+        }
+
+        isReminderFlowActive = true
+        defer { isReminderFlowActive = false }
+        await runBriefing()
+    }
+
+    private func runBriefing() async {
+        isBriefing = true
+        defer { isBriefing = false }
+
         lastStatusMessage = "Acknowledged — fetching news and weather..."
         await speech.speak(Phrases.acknowledgments.randomElement() ?? Phrases.acknowledgments[0])
 
@@ -140,6 +172,7 @@ final class ReminderManager: ObservableObject {
     }
 
     func testVoice() async {
+        guard !isReminderFlowActive else { return }
         await speech.speak("I am Arthur, King of the Britons, and this is how I sound.")
     }
 

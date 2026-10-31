@@ -23,7 +23,8 @@ enum VoiceOption: String, CaseIterable {
 /// Wraps AVSpeechSynthesizer with language/accent selection.
 final class SpeechSynthesizerService: NSObject {
     private let synthesizer = AVSpeechSynthesizer()
-    private var continuation: CheckedContinuation<Void, Never>?
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var deadline: DispatchWorkItem?
 
     static let voiceKey = "selectedLanguage"
 
@@ -45,6 +46,15 @@ final class SpeechSynthesizerService: NSObject {
     /// Speaks text and suspends until speech finishes.
     @MainActor
     func speak(_ text: String) async {
+        // A line started straight after stopSpeaking can be lost with no
+        // delegate callback, so let the old line report its end first.
+        while !waiters.isEmpty {
+            synthesizer.stopSpeaking(at: .immediate)
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                self.waiters.append(cont)
+            }
+        }
+
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
             try AVAudioSession.sharedInstance().setActive(true)
@@ -60,25 +70,47 @@ final class SpeechSynthesizerService: NSObject {
         let languageCode = Self.selectedVoice.languageCode
         utterance.voice = AVSpeechSynthesisVoice(language: languageCode)
 
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
-        }
-
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            self.continuation = cont
+            self.waiters.append(cont)
+            self.armDeadline(for: text)
             self.synthesizer.speak(utterance)
         }
+    }
+
+    /// Cuts off the current line. Its caller is released by the delegate.
+    @MainActor
+    func stop() {
+        if !waiters.isEmpty {
+            synthesizer.stopSpeaking(at: .immediate)
+        }
+    }
+
+    /// Speech that never reports an end must not hold up the reminder flow,
+    /// so each line gets well over the time it needs to be read aloud.
+    private func armDeadline(for text: String) {
+        let item = DispatchWorkItem { [weak self] in
+            self?.synthesizer.stopSpeaking(at: .immediate)
+            self?.releaseWaiters()
+        }
+        deadline = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10 + Double(text.count) * 0.15, execute: item)
+    }
+
+    private func releaseWaiters() {
+        deadline?.cancel()
+        deadline = nil
+        let released = waiters
+        waiters = []
+        released.forEach { $0.resume() }
     }
 }
 
 extension SpeechSynthesizerService: AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        continuation?.resume()
-        continuation = nil
+        releaseWaiters()
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        continuation?.resume()
-        continuation = nil
+        releaseWaiters()
     }
 }

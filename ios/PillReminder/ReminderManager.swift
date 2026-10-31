@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import UserNotifications
 
 @MainActor
@@ -13,7 +14,10 @@ final class ReminderManager: ObservableObject {
     private static let categoryID = "PILL_REMINDER"
     private static let ackActionID = "ACK_ACTION"
 
-    @Published var isReminderFlowActive = false
+    // A briefing outlasts auto-lock, and a locked app stops speaking.
+    @Published var isReminderFlowActive = false {
+        didSet { UIApplication.shared.isIdleTimerDisabled = isReminderFlowActive }
+    }
     @Published var lastStatusMessage = "Ready."
     @Published var hasAPIKey = KeychainHelper.load()?.isEmpty == false
 

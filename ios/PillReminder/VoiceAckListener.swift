@@ -7,7 +7,7 @@ import Speech
 final class VoiceAckListener {
     private let ackWords: Set<String> = [
         "yes", "yeah", "yep", "yup", "done", "taken", "okay", "ok",
-        "confirmed", "aye", "affirmative", "right", "got it", "check",
+        "confirmed", "aye", "affirmative", "right", "check",
     ]
 
     private var audioEngine: AVAudioEngine?
@@ -32,6 +32,16 @@ final class VoiceAckListener {
                 continuation.resume(returning: heard)
             }
         }
+    }
+
+    /// Whole words only: a match inside a word would hear "look" as "ok" and
+    /// "bright" as "right", and record pills as taken.
+    private func heardAcknowledgment(in transcript: String) -> Bool {
+        let words = transcript.lowercased()
+            .components(separatedBy: CharacterSet.letters.inverted)
+            .filter { !$0.isEmpty }
+        return words.contains(where: ackWords.contains)
+            || zip(words, words.dropFirst()).contains { $0 == "got" && $1 == "it" }
     }
 
     private func requestAuthorization() async -> Bool {
@@ -98,8 +108,7 @@ final class VoiceAckListener {
 
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             if let result {
-                let text = result.bestTranscription.formattedString.lowercased()
-                if self?.ackWords.contains(where: { text.contains($0) }) == true {
+                if self?.heardAcknowledgment(in: result.bestTranscription.formattedString) == true {
                     finish(true)
                 }
             }

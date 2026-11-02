@@ -23,6 +23,7 @@ struct SettingsView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(manager.isReminderFlowActive)
                 }
 
                 Section("About") {

@@ -16,6 +16,7 @@ struct PillReminderApp: App {
                 .environmentObject(manager)
                 .task {
                     notificationDelegate.manager = manager
+                    manager.prefetchBriefing()
                     manager.registerNotificationCategory()
                     await manager.requestPermissions()
                     await manager.refreshSchedule()

@@ -1,11 +1,20 @@
 import CoreLocation
 import Foundation
 
-/// Fetches Fox News headlines (RSS) and local weather (wttr.in, no API key)
+/// Fetches Fox News headlines (RSS) and local weather (Open-Meteo, no API key)
 /// using CoreLocation for "the area you're currently in."
 final class NewsWeatherService: NSObject, CLLocationManagerDelegate {
     private let locationManager = CLLocationManager()
     private var locationContinuation: CheckedContinuation<CLLocation?, Never>?
+
+    // URLSession.shared waits up to 60 s on a stalled server, leaving the
+    // user in silence. Match macOS and Windows.
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 12
+        return URLSession(configuration: config)
+    }()
 
     override init() {
         super.init()
@@ -14,36 +23,70 @@ final class NewsWeatherService: NSObject, CLLocationManagerDelegate {
 
     // MARK: - Public
 
-    func fetchWeatherText() async -> String {
-        let location = await currentLocation()
-        let urlString: String
-        if let location {
-            urlString = "https://wttr.in/\(location.coordinate.latitude),\(location.coordinate.longitude)?format=j1"
-        } else {
-            urlString = "https://wttr.in/?format=j1"
-        }
+    static let weatherFailure = "The weather spirits are being most uncooperative today, much like those dreadful French knights."
+
+    /// Nil when the weather could not be fetched.
+    func fetchWeatherText() async -> String? {
+        // Open-Meteo needs coordinates; there is no IP-based fallback.
+        guard let location = await currentLocation() else { return nil }
+        let lat = location.coordinate.latitude, lon = location.coordinate.longitude
+        async let area = areaName(for: location)
         guard
-            let url = URL(string: urlString),
-            let (data, _) = try? await URLSession.shared.data(from: url),
+            let url = URL(string: "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)"
+                + "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code"
+                + "&temperature_unit=fahrenheit"),
+            let (data, _) = try? await session.data(from: url),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let current = (json["current_condition"] as? [[String: Any]])?.first,
-            let descArray = current["weatherDesc"] as? [[String: Any]],
-            let desc = descArray.first?["value"] as? String,
-            let tempF = current["temp_F"] as? String,
-            let feelsF = current["FeelsLikeF"] as? String,
-            let humidity = current["humidity"] as? String
+            let current = json["current"] as? [String: Any],
+            let temp = current["temperature_2m"] as? Double,
+            let feels = current["apparent_temperature"] as? Double,
+            let humidity = current["relative_humidity_2m"] as? Double,
+            let code = current["weather_code"] as? Int
         else {
-            return "The weather spirits are being most uncooperative today, much like those dreadful French knights."
+            return nil
         }
 
-        var area = "your area"
-        if let nearest = (json["nearest_area"] as? [[String: Any]])?.first,
-           let areaNameArr = nearest["areaName"] as? [[String: Any]],
-           let name = areaNameArr.first?["value"] as? String {
-            area = name
-        }
+        return "Weather in \(await area): \(Self.describe(code)). Temperature \(Int(temp.rounded())) degrees Fahrenheit, "
+            + "feels like \(Int(feels.rounded())). Humidity \(Int(humidity.rounded())) percent."
+    }
 
-        return "Weather in \(area): \(desc). Temperature \(tempF) degrees Fahrenheit, feels like \(feelsF). Humidity \(humidity) percent."
+    /// Town name from Apple's geocoder; a slow or failed lookup must not
+    /// hold up the weather.
+    private func areaName(for location: CLLocation) async -> String {
+        await withTaskGroup(of: String?.self) { group in
+            group.addTask {
+                let placemark = try? await CLGeocoder().reverseGeocodeLocation(location).first
+                return placemark?.locality ?? placemark?.subAdministrativeArea
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first ?? "your area"
+        }
+    }
+
+    /// WMO weather interpretation codes, as Open-Meteo reports them.
+    private static func describe(_ code: Int) -> String {
+        switch code {
+        case 0: "clear sky"
+        case 1: "mainly clear"
+        case 2: "partly cloudy"
+        case 3: "overcast"
+        case 45, 48: "fog"
+        case 51, 53, 55: "drizzle"
+        case 56, 57: "freezing drizzle"
+        case 61, 63, 65: "rain"
+        case 66, 67: "freezing rain"
+        case 71, 73, 75, 77: "snow"
+        case 80, 81, 82: "rain showers"
+        case 85, 86: "snow showers"
+        case 95: "thunderstorms"
+        case 96, 99: "thunderstorms with hail"
+        default: "weather of an unknown and possibly French nature"
+        }
     }
 
     func fetchHeadlines(count: Int = 5) async -> [String] {
@@ -53,7 +96,7 @@ final class NewsWeatherService: NSObject, CLLocationManagerDelegate {
         ]
         for feed in feedURLs {
             guard let url = URL(string: feed),
-                  let (data, _) = try? await URLSession.shared.data(from: url) else { continue }
+                  let (data, _) = try? await session.data(from: url) else { continue }
             let titles = RSSParser.parseTitles(from: data)
             if !titles.isEmpty { return Array(titles.prefix(count)) }
         }
@@ -62,35 +105,60 @@ final class NewsWeatherService: NSObject, CLLocationManagerDelegate {
 
     // MARK: - Location
 
+    private var authorizationContinuation: CheckedContinuation<Void, Never>?
+
+    /// A recent fix is reused at once; otherwise a town-level fix is
+    /// requested, which is quicker than a precise one and enough for weather.
+    @MainActor
     private func currentLocation() async -> CLLocation? {
-        guard CLLocationManager.locationServicesEnabled() else { return nil }
-        let status = locationManager.authorizationStatus
-        if status == .notDetermined {
-            locationManager.requestWhenInUseAuthorization()
+        if locationManager.authorizationStatus == .notDetermined {
+            // Asking for a fix before the user answers the permission
+            // prompt fails at once, so wait for the answer.
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                authorizationContinuation = cont
+                locationManager.requestWhenInUseAuthorization()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 30) { self.resumeAuthorization() }
+            }
         }
-        guard status == .authorizedWhenInUse || status == .authorizedAlways || status == .notDetermined else {
+        let status = locationManager.authorizationStatus
+        guard status == .authorizedWhenInUse || status == .authorizedAlways else {
             return nil
         }
+        if let last = locationManager.location, -last.timestamp.timeIntervalSinceNow < 30 * 60 {
+            return last
+        }
 
+        locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
         return await withCheckedContinuation { (cont: CheckedContinuation<CLLocation?, Never>) in
-            self.locationContinuation = cont
-            self.locationManager.requestLocation()
+            locationContinuation = cont
+            locationManager.requestLocation()
             // Safety timeout in case the delegate never calls back.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                self.locationContinuation?.resume(returning: nil)
-                self.locationContinuation = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+                self.resumeLocation(nil)
             }
         }
     }
 
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        locationContinuation?.resume(returning: locations.first)
+    private func resumeLocation(_ location: CLLocation?) {
+        locationContinuation?.resume(returning: location)
         locationContinuation = nil
     }
 
+    private func resumeAuthorization() {
+        authorizationContinuation?.resume()
+        authorizationContinuation = nil
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if manager.authorizationStatus != .notDetermined { resumeAuthorization() }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        resumeLocation(locations.last)
+    }
+
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        locationContinuation?.resume(returning: nil)
-        locationContinuation = nil
+        resumeLocation(nil)
     }
 }
 

@@ -28,6 +28,15 @@ final class ReminderManager: ObservableObject {
     private let listener = VoiceAckListener()
     private let newsWeather = NewsWeatherService()
 
+    private struct BriefingFetch {
+        let started: Date
+        let weather: Task<String?, Never>
+        let headlines: Task<[String], Never>
+    }
+    private var briefingFetch: BriefingFetch?
+    private var weatherFetchFailed = false
+    private static let briefingFreshness: TimeInterval = 10 * 60
+
     // MARK: - Setup
 
     func registerNotificationCategory() {
@@ -116,6 +125,7 @@ final class ReminderManager: ObservableObject {
             ackRequested = false
         }
 
+        prefetchBriefing()
         let phrase = promptText ?? PhraseCache.combinedPool().randomElement() ?? Phrases.reminders[0]
         lastStatusMessage = "Speaking reminder..."
         await speech.speak(phrase)
@@ -153,17 +163,44 @@ final class ReminderManager: ObservableObject {
         await runBriefing()
     }
 
+    /// Starts the weather and news fetches early (at launch and when a
+    /// reminder begins) so a slow server is waited on during speech, not
+    /// after it. A fetch older than ten minutes, or one whose weather
+    /// failed, is replaced.
+    func prefetchBriefing() {
+        if let fetch = briefingFetch,
+           Date().timeIntervalSince(fetch.started) < Self.briefingFreshness,
+           !weatherFetchFailed {
+            return
+        }
+        let newsWeather = self.newsWeather
+        weatherFetchFailed = false
+        briefingFetch = BriefingFetch(
+            started: Date(),
+            weather: Task {
+                let text = await newsWeather.fetchWeatherText()
+                // A failure is retried at the next chance, not kept for ten minutes.
+                if text == nil { self.weatherFetchFailed = true }
+                return text
+            },
+            headlines: Task { await newsWeather.fetchHeadlines() }
+        )
+    }
+
     private func runBriefing() async {
         isBriefing = true
         defer { isBriefing = false }
 
         lastStatusMessage = "Acknowledged — fetching news and weather..."
+        prefetchBriefing()
+        let fetched = briefingFetch
+        briefingFetch = nil
         await speech.speak(Phrases.acknowledgments.randomElement() ?? Phrases.acknowledgments[0])
 
-        let weather = await newsWeather.fetchWeatherText()
+        let weather = await fetched?.weather.value ?? NewsWeatherService.weatherFailure
         await speech.speak("First, the weather! \(weather)")
 
-        let headlines = await newsWeather.fetchHeadlines()
+        let headlines = await fetched?.headlines.value ?? []
         await speech.speak("And now, the top headlines from Fox News!")
         for (index, headline) in headlines.enumerated() {
             await speech.speak("Headline \(index + 1): \(headline)")

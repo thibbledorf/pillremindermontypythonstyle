@@ -10,6 +10,8 @@
 	<string>Used to recognize your spoken acknowledgment of pill reminders.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Used to fetch the local weather report after you acknowledge a reminder.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UIUserInterfaceStyle</key>
 	<string>Automatic</string>
 </dict>

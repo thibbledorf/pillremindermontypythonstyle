@@ -72,10 +72,16 @@ final class ReminderManager: ObservableObject {
         }
     }
 
-    private func topOffNotifications() async {
+    /// Replaces every pending notification, so a changed condition reaches
+    /// the reminders already scheduled.
+    func rescheduleNotifications() async {
+        await topOffNotifications(force: true)
+    }
+
+    private func topOffNotifications(force: Bool = false) async {
         let center = UNUserNotificationCenter.current()
         let pending = await center.pendingNotificationRequests()
-        if pending.count >= Self.pillTimes.count * Self.scheduleDays {
+        if !force, pending.count >= Self.pillTimes.count * Self.scheduleDays {
             return
         }
 

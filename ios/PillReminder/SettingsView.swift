@@ -3,10 +3,21 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var manager: ReminderManager
     @State private var selectedVoice = SpeechSynthesizerService.selectedVoice
+    @AppStorage(Phrases.maladyKey) private var malady = Phrases.defaultMalady
+    @State private var maladyWhenOpened = ""
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    TextField("Condition", text: $malady)
+                        .textInputAutocapitalization(.words)
+                } header: {
+                    Text("Condition")
+                } footer: {
+                    Text("Named in reminders, for example Parkinson's. Leave empty to name none.")
+                }
+
                 Section("Voice") {
                     Picker("Accent", selection: $selectedVoice) {
                         ForEach(VoiceOption.allCases, id: \.self) { voice in
@@ -43,6 +54,13 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+        }
+        .onAppear { maladyWhenOpened = malady }
+        .onDisappear {
+            // Reminders already scheduled carry the old wording.
+            if malady != maladyWhenOpened {
+                Task { await manager.rescheduleNotifications() }
+            }
         }
     }
 }

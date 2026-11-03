@@ -12,7 +12,7 @@ enum Phrases {
         "What is the airspeed velocity of an unladen swallow? African or European? Doesn't MATTER — take your pills FIRST and we'll sort out the swallows afterward!",
         "Brave Sir Robin ran away... but even Brave Sir Robin took his pills! Allegedly! The minstrel may have glossed over that part. PILL TIME!",
         "I am Arthur, King of the Britons! And I hereby decree by royal proclamation that ALL pills shall be consumed at this very moment! The coconuts can wait!",
-        "RUN AWAY! Run away from Parkinson's symptoms! The only weapon against the terrible beast is... your PILLS! Fetch the pills!",
+        "RUN AWAY! Run away from the symptoms of Parkinson's! The only weapon against the terrible beast is... your PILLS! Fetch the pills!",
         "SPAM! Spam spam spam spam! Spam pills spam! Wonderful pills! Except it is not spam — it is VERY IMPORTANT MEDICATION TIME!",
         "Always look on the bright side of life! Which is much easier to do after you have taken your PILLS! So take them! Now! Please!",
         "Tim the Enchanter has foreseen it! The pills must be taken! Ignore his warning and face the consequences of not taking your medication, which I assure you are quite nasty!",
@@ -52,4 +52,21 @@ enum Phrases {
         "And there was much rejoicing! The pills have been taken! Now let us see what chaos the outside world has managed today...",
         "We are no longer the knights who say NIH — we are the knights who say WELL DONE! Pills consumed! Now for the news...",
     ]
+
+    static let maladyKey = "malady"
+    static let defaultMalady = "Parkinson's"
+
+    /// The condition named in reminders, set in Settings. Empty means none.
+    static var malady: String {
+        (UserDefaults.standard.string(forKey: maladyKey) ?? defaultMalady)
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Swaps "Parkinson's" in a phrase for the user's condition, matching
+    /// macOS and Windows.
+    static func personalize(_ phrase: String) -> String {
+        let m = malady
+        guard m.lowercased() != defaultMalady.lowercased() else { return phrase }
+        return phrase.replacingOccurrences(of: defaultMalady, with: m.isEmpty ? "your condition" : m)
+    }
 }

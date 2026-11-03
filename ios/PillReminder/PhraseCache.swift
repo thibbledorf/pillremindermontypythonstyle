@@ -22,8 +22,9 @@ enum PhraseCache {
         }
     }
 
-    /// Combined static + generated pool to draw a reminder phrase from.
+    /// Combined static + generated pool to draw a reminder phrase from,
+    /// naming the user's condition.
     static func combinedPool() -> [String] {
-        Phrases.reminders + load()
+        (Phrases.reminders + load()).map(Phrases.personalize)
     }
 }

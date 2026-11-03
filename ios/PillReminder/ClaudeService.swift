@@ -21,11 +21,12 @@ enum ClaudeService {
         request.setValue(anthropicVersion, forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
 
+        let malady = Phrases.malady
+        let condition = malady.isEmpty ? "" : "The recipient has \(malady) and must take medication on time. "
         let prompt = """
         Write ONE short, funny Monty Python-style pill reminder (2-4 sentences). \
         Reference a specific Monty Python character, quote, or scene in a fresh, creative way. \
-        The recipient has Parkinson's disease and must take medication on time. \
-        Be encouraging, silly, and affectionate — never mean. \
+        \(condition)Be encouraging, silly, and affectionate — never mean. \
         Reply with only the reminder text. No quotes, no labels, no explanation.
         """
 
